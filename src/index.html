@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=default"></script>
+    <script src="./src/public/index.js"></script>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+    <title>HTML 5 Boilerplate</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+
+        #map {
+        height: 100%;
+        }
+
+        html,
+        body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        }
+        .material-symbols-outlined {
+          position: fixed;
+          font-size: 44px;
+          bottom: 22%;
+          right: 1%;
+        }
+
+        .hint{
+          background-color: black;
+          color: white;
+          position: fixed;
+          font-size: 18px;
+          bottom: 30%;
+          width: 200px;
+          right: 1%;
+          visibility: hidden;
+          border-radius: 25% 10%;
+          box-shadow: 5px 10px 8px gray;
+          font-family: sans-serif;
+          padding: 22px;
+        }
+
+        .material-symbols-outlined:hover + .hint {
+          visibility: visible;
+        }
+
+    </style>
+  </head>
+  <body>
+    <div id="map" style="width:100%"></div>  
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA6Ds4jI-G-_OQtfY2s1XtP3iP7rkwP3r8&callback=initMap"></script>
+    <div class="hint-wrapper">
+      <span class="material-symbols-outlined">help</span>
+      <span class="hint">Red mark: Registered location <br> User mark: CURRENT LOCATION </span>
+    </div>
+  </body>
+</html>
