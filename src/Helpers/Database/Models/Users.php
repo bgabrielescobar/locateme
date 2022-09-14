@@ -1,6 +1,8 @@
 <?php
 
-namespace Src\Helpers\Models;
+namespace Src\Helpers\Database\Models;
+
+use Src\Helpers\MySql\Connection;
 
 trait Users
 {

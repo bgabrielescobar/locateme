@@ -6,7 +6,7 @@ use Src\Bootstrap\Bootstrap;
 use DI\Container;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
-use Src\Helpers\Query;
+use Src\Helpers\Database\Query;
 
 trait GET {
 

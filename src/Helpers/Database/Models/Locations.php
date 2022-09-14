@@ -1,6 +1,6 @@
 <?php
 
-namespace Src\Helpers\Models;
+namespace Src\Helpers\Database\Models;
 
 trait Locations
 {

@@ -1,6 +1,6 @@
 <?php
 
-namespace Src\Helpers;
+namespace Src\Helpers\Database;
 
 use Src\Helpers\MySql\Connection;
 
