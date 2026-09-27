@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#5b5bd6">
+    <meta name="robots" content="noindex">
+    <title>LocateMe · Compartir mi ubicación</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap">
+    <link rel="stylesheet" href="src/public/style.css">
+    <script src="src/public/child.js" defer></script>
+  </head>
+  <body>
+    <main class="kid-page" id="kid-page">
+      <div class="kid-wrap">
+
+        <header class="kid-hello">
+          <div class="kid-avatar" id="kid-avatar" aria-hidden="true"></div>
+          <h1 id="kid-title">¡Hola!</h1>
+        </header>
+
+        <section class="kid-card" aria-live="polite">
+          <div class="radar" id="radar" data-tone="waiting">
+            <span class="radar-core" id="radar-icon"></span>
+          </div>
+          <h2 id="status-title">Preparando…</h2>
+          <p id="status-text"></p>
+          <p class="kid-last muted" id="status-last" hidden></p>
+          <button class="btn" id="start-btn" hidden>Compartir mi ubicación</button>
+        </section>
+
+        <button class="sos-btn" id="sos-btn" hidden aria-describedby="sos-help">
+          <span class="sos-fill"></span>
+          <strong>SOS</strong>
+          <span id="sos-help">Mantén presionado si necesitas ayuda</span>
+        </button>
+
+        <p class="kid-tip" id="kid-tip" hidden>Deja esta página abierta para que tu familia sepa dónde estás.</p>
+
+      </div>
+    </main>
+  </body>
+</html>

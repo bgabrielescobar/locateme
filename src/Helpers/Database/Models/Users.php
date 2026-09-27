@@ -2,33 +2,38 @@
 
 namespace Src\Helpers\Database\Models;
 
-use Src\Helpers\MySql\Connection;
-
+// Cuentas de los padres
 trait Users
 {
-    public static function Authentication($username, $password)
+    public static function FindUserByUsername(string $username): ?array
     {
-        $mysqlConnection = parent::getConnection();
+        $user = self::run(
+            'SELECT id, name, username, password_hash FROM parents WHERE username = ?',
+            [$username]
+        )->fetch();
 
-        $query = "SELECT secret_key FROM users WHERE username = $username AND password = $password";
-
-        $result = mysqli_query($mysqlConnection, $query);
-
-        $user = $result->fetch_all(MYSQLI_ASSOC);
-
-        $mysqlConnection->close();
-
-        return $user;
+        return $user ?: null;
     }
 
-    public static function InsertUser()
+    public static function FindUserById(int $userId): ?array
     {
-        $mysqlConnection = parent::getConnection();
+        $user = self::run('SELECT id, name, username FROM parents WHERE id = ?', [$userId])->fetch();
 
-        $query = "INSERT INTO users(user_id, longitude, latitude) values (1, 2, 2)";
+        return $user ? ['id' => (int) $user['id'], 'name' => $user['name'], 'username' => $user['username']] : null;
+    }
 
-        mysqli_query($mysqlConnection, $query);
+    public static function InsertUser(string $name, string $username, string $passwordHash): int
+    {
+        self::run(
+            'INSERT INTO parents (name, username, password_hash) VALUES (?, ?, ?)',
+            [$name, $username, $passwordHash]
+        );
 
-        $mysqlConnection->close();
+        return self::lastInsertId();
+    }
+
+    public static function UpdateUserPassword(int $userId, string $passwordHash): void
+    {
+        self::run('UPDATE parents SET password_hash = ? WHERE id = ?', [$passwordHash, $userId]);
     }
 }

@@ -5,29 +5,39 @@ namespace Src\Helpers\Database\Models;
 trait Locations
 {
 
-    public static function GetAllLocations()
+    // Recorrido de las últimas $hours horas, del más antiguo al más reciente
+    public static function GetLocationHistory(int $childId, int $hours, int $limit = 1000): array
     {
-        $mysqlConnection = parent::getConnection();
+        $rows = self::run(
+            'SELECT latitude, longitude, accuracy, is_sos, recorded_at
+             FROM locations
+             WHERE child_id = ? AND recorded_at >= NOW() - INTERVAL ? HOUR
+             ORDER BY recorded_at DESC, id DESC
+             LIMIT ' . (int) $limit,
+            [$childId, $hours]
+        )->fetchAll();
 
-        $query = "SELECT * FROM user_location";
-        $result = mysqli_query($mysqlConnection, $query);
-
-        $locations = $result->fetch_all(MYSQLI_ASSOC);
-
-        $mysqlConnection->close();
-
-        return $locations;
+        return array_reverse(array_map(fn ($row) => [
+            'latitude'    => (float) $row['latitude'],
+            'longitude'   => (float) $row['longitude'],
+            'accuracy'    => $row['accuracy'] === null ? null : (int) $row['accuracy'],
+            'is_sos'      => (bool) $row['is_sos'],
+            'recorded_at' => self::isoDate($row['recorded_at']),
+        ], $rows));
     }
 
-    public static function InsertLocation($longitude, $latitude)
+    public static function InsertLocation(int $childId, float $latitude, float $longitude, ?int $accuracy, ?int $battery, bool $isSos): void
     {
-        $mysqlConnection = parent::getConnection();
+        self::run(
+            'INSERT INTO locations (child_id, latitude, longitude, accuracy, battery, is_sos) VALUES (?, ?, ?, ?, ?, ?)',
+            [$childId, $latitude, $longitude, $accuracy, $battery, (int) $isSos]
+        );
+    }
 
-        $query = "INSERT INTO user_location(user_id, longitude, latitude) values (1, 2, 2)";
-
-        mysqli_query($mysqlConnection, $query);
-
-        $mysqlConnection->close();
+    // Privacidad: no guardar la ubicación de los niños más tiempo del necesario
+    public static function DeleteLocationsOlderThan(int $days): void
+    {
+        self::run('DELETE FROM locations WHERE recorded_at < NOW() - INTERVAL ? DAY', [$days]);
     }
 
 }
