@@ -3,34 +3,22 @@
 namespace Src\Router\Models\Locations\Methods;
 
 use Src\Bootstrap\Bootstrap;
-use DI\Container;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
-use Src\Helpers\Database\Query;
+use Src\Helpers\Auth;
+use Src\Helpers\Http;
 
 trait GET {
 
-    public function home() 
+    // El teléfono comprueba que su enlace sigue siendo válido y obtiene el nombre del niño
+    public function device()
     {
-      Bootstrap::getBootstrapApp()->get('/', function (Request $request, Response $response, $args) {
+        Bootstrap::getBootstrapApp()->get('/api/device', function (Request $request, Response $response, $args) {
 
-        $indexHtml = file_get_contents("./src/index.html");
-        $response->getBody()->write($indexHtml);
+            $child = $request->getAttribute('child');
 
-        return $response;
-      });
+            return Http::json($response, ['child' => ['name' => $child['name'], 'color' => $child['color']]]);
+        })->add(Auth::requireDevice());
     }
 
-    public function mapping()
-    {
-        Bootstrap::getBootstrapApp()->get('/mapping', function (Request $request, Response $response, $args) {
-
-            $locations = Query::GetAllLocations();
-
-            $response->getBody()->write(json_encode($locations, JSON_FORCE_OBJECT));
-
-             return $response->withHeader('Content-Type', 'application/json');
-          });
-    }
-    
 }

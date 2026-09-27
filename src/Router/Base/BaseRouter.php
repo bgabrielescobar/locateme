@@ -2,7 +2,19 @@
 
 namespace Src\Router\Base;
 
-interface BaseRouter
+abstract class BaseRouter
 {
-    public function addRoutes();
+
+    // Nombre de los métodos que registran rutas, agrupados por verbo HTTP
+    protected $Methods = [];
+
+    public function addRoutes()
+    {
+        foreach($this->Methods as $method) {
+            foreach($method as $route) {
+                $this->$route();
+            }
+        }
+    }
+
 }

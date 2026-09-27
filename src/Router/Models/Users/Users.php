@@ -1,29 +1,21 @@
-<?php 
+<?php
 
 namespace Src\Router\Models\Users;
 
 use Src\Router\Base\BaseRouter;
 
-class Users implements BaseRouter 
+// Cuentas de los padres: registro, inicio y cierre de sesión
+class Users extends BaseRouter
 {
     use Methods\GET;
     use Methods\POST;
 
-    private $Methods = [
+    protected $Methods = [
         'GET'  => [
-            'users'
+            'me'
         ],
         'POST' => [
-            'user'
+            'register', 'login', 'logout'
         ]
     ];
-
-    public function addRoutes()
-    {
-        foreach($this->Methods as $method) {
-            foreach($method as $route) {
-                $this->$route();
-            }
-        }
-    }
 }

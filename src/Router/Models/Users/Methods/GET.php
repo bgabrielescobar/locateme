@@ -5,22 +5,24 @@ namespace Src\Router\Models\Users\Methods;
 use Src\Bootstrap\Bootstrap;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
+use Src\Helpers\Auth;
+use Src\Helpers\Http;
 use Src\Helpers\Database\Query;
 
 trait GET {
 
-    public function users()
+    public function me()
     {
-        Bootstrap::getBootstrapApp()->get('/users', function (Request $request, Response $response, $args) {
+        Bootstrap::getBootstrapApp()->get('/api/me', function (Request $request, Response $response, $args) {
 
-            $credentials = json_decode( (string) $request->getBody());
+            $user = Query::FindUserById($request->getAttribute('user_id'));
 
-            $secret_key = Query::Authentication($credentials->username, $credentials->password);
+            if ($user === null) {
+                return Http::error($response, 'Inicia sesión para continuar.', 401);
+            }
 
-            $response->getBody()->write(json_encode($secret_key, JSON_FORCE_OBJECT));
-
-            return $response->withHeader('Content-Type', 'application/json');
-        });
+            return Http::json($response, ['user' => $user]);
+        })->add(Auth::requireUser());
     }
 
 }

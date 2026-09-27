@@ -1,35 +1,23 @@
-<?php 
+<?php
 
 namespace Src\Router\Models\Locations;
 
-use Src\Router\Models\Locations\Methods\POST;
 use Src\Router\Base\BaseRouter;
-use Src\Bootstrap\Bootstrap;
-use Psr\Http\Message\ResponseInterface as Response;
-use Psr\Http\Message\ServerRequestInterface as Request;
 
-class Locations implements BaseRouter 
+// Rutas que usa el teléfono del niño (autenticado con su token)
+class Locations extends BaseRouter
 {
 
     use Methods\GET;
     use Methods\POST;
 
-    private $Methods = [
+    protected $Methods = [
         'GET'  => [
-            'home', 'mapping'
+            'device'
         ],
         'POST' => [
             'locations'
-            ]
+        ]
     ];
-
-    public function addRoutes()
-    {
-        foreach($this->Methods as $method) {
-            foreach($method as $route) {
-                $this->$route();
-            }
-        }
-    }
 
 }
