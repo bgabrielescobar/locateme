@@ -2,10 +2,19 @@
 
 namespace Src\Helpers\Database\Models;
 
+/** Consultas de la tabla `locations` (historial de ubicaciones de cada niño). */
 trait Locations
 {
 
-    // Recorrido de las últimas $hours horas, del más antiguo al más reciente
+    /**
+     * Recorrido de las últimas $hours horas, del más antiguo al más reciente.
+     *
+     * Se piden los $limit puntos MÁS RECIENTES (ORDER BY ... DESC LIMIT) y luego se
+     * invierte el arreglo, para que la línea del mapa se dibuje en orden cronológico.
+     * $limit se escribe directo en el SQL en vez de usar "?" porque execute() manda
+     * todos los parámetros como texto y LIMIT necesita un número; el (int) garantiza
+     * que es seguro.
+     */
     public static function GetLocationHistory(int $childId, int $hours, int $limit = 1000): array
     {
         $rows = self::run(
@@ -26,6 +35,7 @@ trait Locations
         ], $rows));
     }
 
+    /** Guarda una ubicación. recorded_at lo pone MySQL con la hora actual (en UTC). */
     public static function InsertLocation(int $childId, float $latitude, float $longitude, ?int $accuracy, ?int $battery, bool $isSos): void
     {
         self::run(
@@ -34,7 +44,11 @@ trait Locations
         );
     }
 
-    // Privacidad: no guardar la ubicación de los niños más tiempo del necesario
+    /**
+     * Privacidad: no guardar la ubicación de los niños más tiempo del necesario.
+     * POST /api/locations la llama de vez en cuando (1 de cada 100 envíos) con el
+     * valor de LOCATION_RETENTION_DAYS del .env.
+     */
     public static function DeleteLocationsOlderThan(int $days): void
     {
         self::run('DELETE FROM locations WHERE recorded_at < NOW() - INTERVAL ? DAY', [$days]);

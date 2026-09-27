@@ -11,6 +11,7 @@ use Src\Helpers\Database\Query;
 
 trait DELETE {
 
+    /** DELETE /api/zones/{id} — borra una zona. 404 si no existe o es de otra familia. */
     public function removeZone()
     {
         Bootstrap::getBootstrapApp()->delete('/api/zones/{id:[0-9]+}', function (Request $request, Response $response, $args) {

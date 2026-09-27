@@ -5,6 +5,11 @@
 --
 -- Todas las fechas se guardan en UTC.
 
+-- Relaciones:
+--   parents  1 ── * children  1 ── * locations
+--   parents  1 ── * safe_zones
+-- Al borrar un padre o un hijo, todo lo que depende de él se borra solo (ON DELETE CASCADE).
+
 -- Cuentas de los padres (los que ven el mapa)
 CREATE TABLE IF NOT EXISTS parents (
     id            INT UNSIGNED NOT NULL AUTO_INCREMENT,

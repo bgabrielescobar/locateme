@@ -1,5 +1,13 @@
 <?php
 
+/*
+ * Punto de entrada ("front controller") de toda la aplicación.
+ *
+ * Toda petición que no sea un archivo estático llega aquí: en Apache gracias a
+ * las reglas del .htaccess y en desarrollo porque el servidor de PHP se arranca
+ * con `php -S localhost:8000 index.php`. Este archivo sólo prepara el entorno y
+ * le pasa el control a Bootstrap::run(), que decide qué ruta atiende la petición.
+ */
 // Los errores van al log del servidor; nunca se muestran al visitante
 ini_set('display_errors', '0');
 

@@ -2,9 +2,22 @@
 
 namespace Src\Helpers\Database\Models;
 
+/**
+ * Consultas de la tabla `children` (los hijos de cada padre).
+ *
+ * Las que leen o modifican a un niño desde el panel reciben $parentId y lo usan
+ * en el WHERE: así un padre nunca puede tocar a los hijos de otra familia,
+ * aunque adivine el id.
+ */
 trait Children
 {
-    // Hijos del padre con su última ubicación conocida
+    /**
+     * Hijos del padre con su última ubicación conocida.
+     *
+     * El LEFT JOIN con una subconsulta trae, para cada niño, sólo su fila más
+     * reciente de `locations` (o NULL si nunca ha enviado nada). Después se le da
+     * forma al resultado: los números pasan de texto a int/float y las fechas a ISO 8601.
+     */
     public static function GetChildren(int $parentId): array
     {
         $rows = self::run(
@@ -37,6 +50,7 @@ trait Children
         ], $rows);
     }
 
+    /** Un niño del padre, o null si no existe o es de otra familia. */
     public static function FindChild(int $childId, int $parentId): ?array
     {
         $child = self::run(
@@ -47,6 +61,7 @@ trait Children
         return $child ? ['id' => (int) $child['id'], 'name' => $child['name'], 'color' => $child['color']] : null;
     }
 
+    /** Niño dueño del token (se busca por su hash). Lo usa Auth::requireDevice(). */
     public static function FindChildByToken(string $tokenHash): ?array
     {
         $child = self::run(
@@ -57,6 +72,7 @@ trait Children
         return $child ? ['id' => (int) $child['id'], 'name' => $child['name'], 'color' => $child['color']] : null;
     }
 
+    /** Crea al niño con el hash del token de su teléfono y devuelve su id. */
     public static function InsertChild(int $parentId, string $name, string $color, string $tokenHash): int
     {
         self::run(
@@ -67,6 +83,7 @@ trait Children
         return self::lastInsertId();
     }
 
+    /** Cambia el token del teléfono. Devuelve false si el niño no es de ese padre. */
     public static function UpdateChildToken(int $childId, int $parentId, string $tokenHash): bool
     {
         return self::run(
@@ -75,6 +92,7 @@ trait Children
         )->rowCount() > 0;
     }
 
+    /** Borra al niño; sus ubicaciones se borran en cascada (ON DELETE CASCADE). */
     public static function DeleteChild(int $childId, int $parentId): bool
     {
         return self::run(
@@ -83,11 +101,13 @@ trait Children
         )->rowCount() > 0;
     }
 
+    /** Marca una alerta SOS pendiente con la hora actual. */
     public static function SetChildSos(int $childId): void
     {
         self::run('UPDATE children SET sos_at = CURRENT_TIMESTAMP WHERE id = ?', [$childId]);
     }
 
+    /** Quita la alerta SOS porque el padre ya la atendió. */
     public static function ClearChildSos(int $childId, int $parentId): bool
     {
         return self::run(

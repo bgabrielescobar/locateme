@@ -11,6 +11,7 @@ use Src\Helpers\Database\Query;
 
 trait GET {
 
+    /** GET /api/zones — { "zones": [{ id, name, latitude, longitude, radius }] }, ordenadas por nombre. */
     public function zones()
     {
         Bootstrap::getBootstrapApp()->get('/api/zones', function (Request $request, Response $response, $args) {

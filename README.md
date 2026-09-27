@@ -11,6 +11,9 @@ Aplicación web para que los padres vean en un mapa dónde están sus hijos.
 Hecha con PHP 8.1+ ([Slim 4](https://www.slimframework.com/)), MySQL/MariaDB y
 [Leaflet](https://leafletjs.com/) con mapas de OpenStreetMap (no necesita llave de API).
 
+> **¿Vas a trabajar en el código?** Empieza por la [guía para desarrolladores](docs/GUIA-DESARROLLO.md):
+> explica la arquitectura, qué hace cada archivo y cómo hacer los cambios más comunes.
+
 ## Instalación
 
 ```bash

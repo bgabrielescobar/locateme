@@ -2,15 +2,31 @@
 
 /* =========================================================================
    LocateMe - página del niño: comparte su ubicación y tiene un botón SOS
+
+   Qué hace, en orden (ver start() al final del archivo):
+   1. Lee el token del enlace (/nino#t=<token>) y lo guarda en localStorage,
+      así el niño puede volver a abrir /nino sin necesitar el enlace.
+   2. Pregunta al servidor de quién es el token (GET /api/device) para saludarlo.
+   3. Pide permiso de ubicación y usa watchPosition() para recibir lecturas del GPS.
+   4. Envía la ubicación (POST /api/locations) según las reglas de sendIfNeeded().
+   5. El botón SOS, mantenido presionado SOS_HOLD_MS, manda una alerta al padre.
+
+   Limitación: es una página web. Si se cierra la pestaña o el teléfono
+   suspende el navegador, deja de enviar; por eso se le pide al niño dejarla abierta.
    ========================================================================= */
 
+// Clave de localStorage donde se guarda el token del teléfono
 const TOKEN_KEY = 'locateme_device_token';
+// Reglas para enviar la ubicación (ver sendIfNeeded):
 const SEND_EVERY_MS = 60000;   // envío periódico aunque no se mueva
 const MOVE_METERS = 25;        // o antes, si se movió esta distancia...
 const MIN_GAP_MS = 5000;       // ...pero nunca más seguido que esto
+// Cada cuánto se revisa si toca enviar, aunque el GPS no mande lecturas nuevas
 const CHECK_MS = 5000;
+// Tiempo que hay que mantener presionado el botón SOS
 const SOS_HOLD_MS = 1500;
 
+// Íconos SVG fijos (mismo estilo que el panel de los padres)
 const ICONS = {
   pin: '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
   pinOff: '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><path d="m3 3 18 18"/>',
@@ -20,6 +36,14 @@ const ICONS = {
   link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
 };
 
+// Estado de la página:
+//   token         token secreto del teléfono (identifica al niño ante la API)
+//   watchId       id de watchPosition(); null = no se está leyendo el GPS
+//   lastPosition  última lectura del GPS
+//   lastSent      { at, latitude, longitude } del último envío exitoso
+//   battery       BatteryManager del navegador (sólo existe en Chrome/Android)
+//   sending       evita dos envíos normales al mismo tiempo
+//   checkTimer    intervalo que llama a sendIfNeeded()
 let token = null;
 let watchId = null;
 let lastPosition = null;
@@ -30,15 +54,18 @@ let checkTimer = null;
 
 const $ = (selector) => document.querySelector(selector);
 
+/** Ícono SVG a partir de su nombre en ICONS. */
 function icon(name) {
   const wrap = document.createElement('span');
   wrap.innerHTML = `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
   return wrap.firstChild;
 }
 
+// sleep(ms): pausa dentro de una función async · relative: textos como "hace 5 minutos"
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const relative = new Intl.RelativeTimeFormat('es', { numeric: 'auto' });
 
+/** Distancia en metros entre dos puntos { latitude, longitude } (fórmula de haversine). */
 function distanceMeters(a, b) {
   const rad = (deg) => deg * Math.PI / 180;
   const dLat = rad(b.latitude - a.latitude);
@@ -49,6 +76,14 @@ function distanceMeters(a, b) {
 
 /* ---------- Token del enlace ---------- */
 
+/**
+ * Devuelve el token del teléfono.
+ *
+ * La primera vez viene en la URL (/nino#t=<token>): se guarda en localStorage y
+ * se borra de la barra de direcciones para que no quede a la vista ni en el
+ * historial. Las siguientes veces se lee de localStorage. Si el navegador no
+ * permite localStorage (modo privado), se deja en la URL para no perderlo.
+ */
 function readToken() {
   const match = location.hash.match(/(?:^#|&)t=([A-Za-z0-9_-]{20,100})/);
   if (match) {
@@ -66,11 +101,13 @@ function readToken() {
   }
 }
 
+/** Olvida el token (cuando el servidor responde que ya no es válido). */
 function forgetToken() {
   token = null;
   try { localStorage.removeItem(TOKEN_KEY); } catch { /* nada que borrar */ }
 }
 
+/** Llama a la API con el token en la cabecera Authorization. Si la respuesta no es 2xx lanza un Error con .status. */
 async function api(method, path, body) {
   const response = await fetch('api/' + path, {
     method,
@@ -92,6 +129,7 @@ async function api(method, path, body) {
 
 /* ---------- Pantalla ---------- */
 
+/** Cambia la tarjeta de estado: color (tone), ícono, título, texto y si el «radar» se anima (live). */
 function setStatus({ tone, title, text = '', iconName, live = false }) {
   const radar = $('#radar');
   radar.dataset.tone = tone;
@@ -102,6 +140,7 @@ function setStatus({ tone, title, text = '', iconName, live = false }) {
   $('#status-text').hidden = !text;
 }
 
+/** Texto «Último envío: hace...». */
 function renderLast() {
   const el = $('#status-last');
   if (!lastSent) {
@@ -113,12 +152,17 @@ function renderLast() {
   el.hidden = false;
 }
 
+/** Saluda al niño por su nombre y usa su color en la página. */
 function greet(child) {
   $('#kid-page').style.setProperty('--kid', child.color);
   $('#kid-avatar').textContent = ([...child.name.trim()][0] || '·').toUpperCase();
   $('#kid-title').textContent = `¡Hola, ${child.name}!`;
 }
 
+/**
+ * Pantalla para cuando el teléfono no está vinculado o el enlace ya no sirve:
+ * detiene el GPS y oculta el botón SOS.
+ */
 function showUnlinked(title, text) {
   stopWatching();
   $('#sos-btn').hidden = true;
@@ -128,6 +172,7 @@ function showUnlinked(title, text) {
   setStatus({ tone: 'off', title, text, iconName: 'link' });
 }
 
+/** Estado normal: la ubicación se está enviando bien. */
 function showSharing() {
   setStatus({ tone: 'ok', title: 'Tu familia puede ver dónde estás', iconName: 'check', live: true });
   renderLast();
@@ -135,6 +180,11 @@ function showSharing() {
 
 /* ---------- Ubicación ---------- */
 
+/**
+ * Empieza a leer el GPS (la primera vez el navegador pide el permiso).
+ * enableHighAccuracy pide el GPS real y no sólo la ubicación por WiFi;
+ * maximumAge acepta lecturas de hasta 10 s de antigüedad para ahorrar batería.
+ */
 function startWatching() {
   if (watchId !== null) return;
   $('#start-btn').hidden = true;
@@ -149,19 +199,29 @@ function startWatching() {
   checkTimer = setInterval(sendIfNeeded, CHECK_MS);
 }
 
+/** Deja de leer el GPS y de revisar si toca enviar. */
 function stopWatching() {
   if (watchId !== null) navigator.geolocation.clearWatch(watchId);
   clearInterval(checkTimer);
   watchId = null;
 }
 
+/** Llegó una lectura nueva del GPS. */
 function onPosition(position) {
   lastPosition = position;
   sendIfNeeded();
 }
 
-// Se revisa con cada lectura del GPS y también cada pocos segundos, para que un
-// movimiento que llegó justo después de un envío no se quede sin mandar
+/**
+ * Decide si toca enviar la ubicación. Se envía cuando:
+ *   - nunca se ha enviado, o
+ *   - pasaron SEND_EVERY_MS (60 s) desde el último envío, aunque no se haya
+ *     movido (así el padre sabe que el teléfono sigue activo), o
+ *   - se movió MOVE_METERS (25 m) o más y pasaron al menos MIN_GAP_MS (5 s).
+ *
+ * Se revisa con cada lectura del GPS y también cada CHECK_MS, para que un
+ * movimiento que llegó justo después de un envío no se quede sin mandar.
+ */
 function sendIfNeeded() {
   renderLast();
   if (!lastPosition) return;
@@ -176,6 +236,10 @@ function sendIfNeeded() {
   }
 }
 
+/**
+ * Errores del GPS. Sin permiso se detiene y explica cómo activarlo; sin señal o
+ * si tarda demasiado, watchPosition sigue intentando por su cuenta.
+ */
 function onPositionError(error) {
   if (error.code === error.PERMISSION_DENIED) {
     stopWatching();
@@ -199,6 +263,11 @@ function onPositionError(error) {
   }
 }
 
+/**
+ * Envía la última ubicación (y la batería) al servidor. Con sos=true manda
+ * además la alerta, aunque todavía no haya ubicación. Devuelve true si el
+ * servidor la recibió.
+ */
 async function send(sos = false) {
   if (!token || (sending && !sos)) return false;
   sending = true;
@@ -233,6 +302,12 @@ async function send(sos = false) {
 
 /* ---------- Botón SOS (mantener presionado para evitar toques accidentales) ---------- */
 
+/**
+ * Botón SOS. Hay que mantenerlo presionado SOS_HOLD_MS para que un toque
+ * accidental no mande la alerta; mientras tanto la barra se llena (clase
+ * .is-holding + transición de CSS). Funciona con el dedo, el mouse y el teclado
+ * (Enter o Espacio). Si no hay internet, reintenta cada 5 s hasta lograrlo.
+ */
 function setupSos() {
   const button = $('#sos-btn');
   const help = $('#sos-help');
@@ -294,6 +369,11 @@ function setupSos() {
 
 /* ---------- Inicio ---------- */
 
+/**
+ * Arranque de la página. Sólo empieza a leer el GPS automáticamente si el
+ * permiso ya estaba concedido; si no, muestra el botón «Compartir mi ubicación»,
+ * porque los navegadores prefieren pedir permisos después de un toque.
+ */
 async function start() {
   $('#kid-avatar').replaceChildren(icon('pin'));
   token = readToken();
@@ -350,5 +430,6 @@ async function start() {
   });
 }
 
+// Arranque
 $('#start-btn').addEventListener('click', startWatching);
 start();

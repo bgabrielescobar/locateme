@@ -10,7 +10,12 @@ use Src\Helpers\Http;
 
 trait GET {
 
-    // El teléfono comprueba que su enlace sigue siendo válido y obtiene el nombre del niño
+    /**
+     * GET /api/device — el teléfono comprueba que su enlace sigue siendo válido.
+     *
+     * Respuesta: { "child": { name, color } }, con lo que la página saluda al niño
+     * por su nombre. 401 si el token ya no sirve (por ejemplo, se generó uno nuevo).
+     */
     public function device()
     {
         Bootstrap::getBootstrapApp()->get('/api/device', function (Request $request, Response $response, $args) {
