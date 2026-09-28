@@ -11,7 +11,12 @@ use Src\Helpers\Database\Query;
 
 trait DELETE {
 
-    // Borra al niño y todo su historial de ubicaciones
+    /**
+     * DELETE /api/children/{id} — quita al niño.
+     *
+     * Su historial se borra solo gracias a ON DELETE CASCADE en la tabla
+     * locations, y su token desaparece, así que el teléfono ya no puede enviar datos.
+     */
     public function removeChild()
     {
         Bootstrap::getBootstrapApp()->delete('/api/children/{id:[0-9]+}', function (Request $request, Response $response, $args) {

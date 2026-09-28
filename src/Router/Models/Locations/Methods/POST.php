@@ -12,8 +12,19 @@ use Src\Helpers\Database\Query;
 
 trait POST {
 
-    // { latitude, longitude, accuracy?, battery?, sos? }
-    // Con sos=true las coordenadas son opcionales: la alerta se manda aunque no haya GPS.
+    /**
+     * POST /api/locations — el teléfono envía su ubicación y/o una alerta SOS.
+     *
+     * Cuerpo JSON: { "latitude": 32.604, "longitude": -115.480, "accuracy": 15, "battery": 80, "sos": false }
+     *   - accuracy (metros), battery (%) y sos son opcionales.
+     *   - Con "sos": true las coordenadas también son opcionales: la alerta se
+     *     manda aunque el teléfono todavía no tenga señal de GPS.
+     *
+     * Respuesta 201: { "ok": true }
+     *
+     * La hora (recorded_at) la pone la base de datos y no el teléfono, porque el
+     * reloj del teléfono puede estar mal.
+     */
     public function locations()
     {
         Bootstrap::getBootstrapApp()->post('/api/locations', function (Request $request, Response $response, $args) {

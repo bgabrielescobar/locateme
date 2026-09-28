@@ -1,3 +1,8 @@
+# Configuración para Apache (necesita mod_rewrite y "AllowOverride All").
+#   1. Los archivos privados responden 403 Forbidden.
+#   2. Los archivos que existen en src/public (JS, CSS) se entregan directo.
+#   3. Todo lo demás (/, /nino, /api/...) lo atiende index.php con Slim.
+
 RewriteEngine On
 
 # Nunca servir archivos privados: .env, .git, código PHP, dependencias, esquema de la BD
@@ -6,6 +11,7 @@ RewriteRule ^(vendor|database)(/|$) - [F,L]
 RewriteRule ^(composer\.(json|lock)|README\.md|testfile\.txt)$ - [F,L]
 RewriteRule ^src/(?!public/) - [F,L]
 
+# Si no es un archivo ni una carpeta real, la petición va a index.php
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ index.php [QSA,L]

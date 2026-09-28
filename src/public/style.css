@@ -1,5 +1,20 @@
 /* =========================================================================
    LocateMe - estilos compartidos (panel de padres y página del niño)
+
+   Orden del archivo:
+     1. Variables de diseño (colores, radios, sombras) y modo oscuro
+     2. Base, íconos, botones y formularios
+     3. Pantalla de acceso
+     4. Panel de los padres: tarjetas, zonas, mapa, marcadores y diálogos
+     5. Ajustes para móvil
+     6. Página del niño (/nino)
+
+   Convenciones:
+     - Usa siempre las variables (var(--brand), var(--text)...) en lugar de
+       colores fijos: así el modo oscuro funciona sin reglas extra.
+     - .tone-ok / -warn / -danger / -idle / -brand: colores de estado.
+     - .is-*: estados que agrega JavaScript (is-selected, is-sos, is-holding...).
+     - --c: color de cada niño, que JavaScript pone en línea (style="--c:#ec4899").
    ========================================================================= */
 
 :root {
@@ -33,6 +48,7 @@
   color-scheme: light;
 }
 
+/* Modo oscuro (según la configuración del sistema): sólo se redefinen las variables. */
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #10121d;
@@ -259,6 +275,8 @@ button { cursor: pointer; }
 }
 .summary .icon { width: 22px; height: 22px; }
 
+/* Colores de estado; los elige statusOf() en index.js:
+   ok = en zona segura, warn = fuera de zona, danger = SOS, idle = sin señal, brand = normal */
 .tone-ok { color: var(--ok); background: var(--ok-soft); }
 .tone-warn { color: var(--warn); background: var(--warn-soft); }
 .tone-danger { color: var(--danger); background: var(--danger-soft); }
@@ -273,7 +291,7 @@ button { cursor: pointer; }
 
 .list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 
-/* Tarjeta de cada hijo */
+/* Tarjeta de cada hijo. --c es su color, que JavaScript pone en línea. */
 .child-card {
   --c: var(--brand);
   border: 1px solid var(--border);
@@ -483,6 +501,9 @@ button { cursor: pointer; }
 /* Marcadores de los niños */
 .kid-icon { background: none; border: 0; }
 .kid-marker { --c: var(--brand); position: relative; width: 46px; height: 46px; }
+/* El pin es un cuadrado con 3 esquinas redondeadas girado -45°: la esquina en
+   punta queda abajo, 56px debajo del borde superior. Si cambias el tamaño,
+   actualiza iconAnchor en kidIcon() de index.js y el top de .kid-pulse. */
 .kid-pin {
   width: 46px; height: 46px;
   display: grid; place-items: center;
@@ -569,6 +590,7 @@ dialog.modal::backdrop { background: rgba(15, 17, 35, .5); backdrop-filter: blur
 
 /* ---------- Móvil: mapa arriba, panel deslizable abajo ---------- */
 
+/* El corte de 900px también está en isMobile() de index.js: si lo cambias aquí, cámbialo allá. */
 @media (max-width: 900px) {
   .app {
     grid-template-columns: 1fr;
@@ -643,6 +665,7 @@ dialog.modal::backdrop { background: rgba(15, 17, 35, .5); backdrop-filter: blur
 .kid-card p { margin: 0; color: var(--muted); font-weight: 600; line-height: 1.5; }
 .kid-card .btn { margin-top: 8px; font-size: 17px; min-height: 52px; padding: 12px 24px; border-radius: 16px; }
 
+/* Círculo de estado de la página del niño: data-tone cambia el color y .is-live anima las ondas. */
 .radar {
   --tone: var(--ok);
   position: relative; width: 96px; height: 96px; margin-bottom: 6px;
@@ -668,6 +691,8 @@ dialog.modal::backdrop { background: rgba(15, 17, 35, .5); backdrop-filter: blur
 
 .kid-last { font-size: 14px; }
 
+/* Botón SOS: al mantenerlo presionado JS agrega .is-holding y la capa .sos-fill
+   se llena en --hold-ms; cuando la alerta llega, .is-sent lo pone verde. */
 .sos-btn {
   position: relative;
   width: 100%; min-height: 150px;

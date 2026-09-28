@@ -10,6 +10,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap">
+    <!-- Librerías externas con versión fija e "integrity" (SRI): si el CDN cambiara
+         el archivo, el navegador se niega a usarlo. Si cambias la versión, recalcula
+         el hash; si cambias de CDN, agrega el dominio a la CSP (Pages/Methods/GET.php). -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
           integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
     <link rel="stylesheet" href="src/public/style.css">
@@ -22,6 +25,14 @@
   </head>
   <body>
 
+    <!--
+      Panel de los padres. Tiene dos vistas y sólo se ve una a la vez:
+        #auth-view  iniciar sesión / crear cuenta
+        #app-view   lista de hijos y zonas (panel lateral) + mapa
+      src/public/index.js decide cuál mostrar y genera todo el contenido dinámico.
+      Los id se usan desde index.js: si cambias uno, búscalo también allí.
+      Los <span data-icon="..."> se rellenan con íconos SVG al cargar la página.
+    -->
     <!-- ===================== Acceso ===================== -->
     <section id="auth-view" class="auth" hidden>
       <div class="auth-card">
@@ -127,6 +138,8 @@
       <main class="map-wrap">
         <div id="map" aria-label="Mapa con la ubicación de tus hijos"></div>
 
+        <!-- Todo lo que flota sobre el mapa: alertas SOS, aviso de «toca el mapa»,
+             botones, leyenda, editor de zonas y avisos (toasts). -->
         <div class="map-top">
           <div id="alerts" class="alerts"></div>
           <div class="banner" id="placing-hint" hidden>
@@ -178,6 +191,8 @@
     </div>
 
     <!-- ===================== Diálogos ===================== -->
+    <!-- Ventanas modales (<dialog>): index.js las abre con showModal() y los
+         botones con el atributo data-close las cierran. -->
     <dialog class="modal" id="child-dialog" aria-labelledby="child-dialog-title">
       <form class="modal-body" id="child-form" method="dialog">
         <div class="modal-head">

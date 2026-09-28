@@ -2,9 +2,10 @@
 
 namespace Src\Helpers\Database\Models;
 
-// Zonas seguras (casa, escuela...) de cada padre
+/** Consultas de la tabla `safe_zones` (zonas seguras de cada padre). */
 trait Zones
 {
+    /** Zonas del padre ordenadas por nombre; latitud/longitud como float y radio en metros. */
     public static function GetZones(int $parentId): array
     {
         $rows = self::run(
@@ -21,6 +22,7 @@ trait Zones
         ], $rows);
     }
 
+    /** Crea una zona y devuelve su id. */
     public static function InsertZone(int $parentId, string $name, float $latitude, float $longitude, int $radius): int
     {
         self::run(
@@ -31,6 +33,7 @@ trait Zones
         return self::lastInsertId();
     }
 
+    /** Borra una zona del padre. Devuelve false si no existe o es de otra familia. */
     public static function DeleteZone(int $zoneId, int $parentId): bool
     {
         return self::run(

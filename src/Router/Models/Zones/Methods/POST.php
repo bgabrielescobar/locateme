@@ -12,7 +12,12 @@ use Src\Helpers\Database\Query;
 
 trait POST {
 
-    // { name, latitude, longitude, radius } con el radio en metros
+    /**
+     * POST /api/zones — crea una zona segura.
+     *
+     * Cuerpo JSON: { "name": "Casa", "latitude": 32.604, "longitude": -115.480, "radius": 150 }
+     * El radio va en metros (de 30 a 5000). Respuesta 201: { "zone": {...} }
+     */
     public function addZone()
     {
         Bootstrap::getBootstrapApp()->post('/api/zones', function (Request $request, Response $response, $args) {

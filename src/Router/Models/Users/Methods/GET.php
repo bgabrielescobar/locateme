@@ -11,6 +11,12 @@ use Src\Helpers\Database\Query;
 
 trait GET {
 
+    /**
+     * GET /api/me — datos del padre con sesión: { "user": { id, name, username } }.
+     *
+     * El panel la llama al cargar para decidir si muestra el inicio de sesión
+     * (responde 401) o directamente el mapa.
+     */
     public function me()
     {
         Bootstrap::getBootstrapApp()->get('/api/me', function (Request $request, Response $response, $args) {

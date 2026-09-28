@@ -12,6 +12,17 @@ use Src\Helpers\Database\Query;
 
 trait POST {
 
+    /**
+     * POST /api/register — crea la cuenta de un padre e inicia su sesión.
+     *
+     * Cuerpo JSON: { "name": "Ana", "username": "ana.lopez", "password": "mínimo 8 caracteres" }
+     *
+     * Respuestas:
+     *   201 { "user": {...} }   cuenta creada, ya con la sesión iniciada
+     *   400 { "error": ... }    algún dato no es válido
+     *   403 { "error": ... }    ALLOW_REGISTRATION=false en el .env
+     *   409 { "error": ... }    ese usuario ya existe
+     */
     public function register()
     {
         Bootstrap::getBootstrapApp()->post('/api/register', function (Request $request, Response $response, $args) {
@@ -45,6 +56,14 @@ trait POST {
         });
     }
 
+    /**
+     * POST /api/login — inicia la sesión de un padre.
+     *
+     * Cuerpo JSON: { "username": "ana.lopez", "password": "..." }
+     *
+     * Respuestas: 200 { "user": {...} } o 401 si el usuario o la contraseña están
+     * mal. El mensaje es el mismo en ambos casos para no revelar qué usuarios existen.
+     */
     public function login()
     {
         Bootstrap::getBootstrapApp()->post('/api/login', function (Request $request, Response $response, $args) {
@@ -66,6 +85,8 @@ trait POST {
                 return Http::error($response, 'Usuario o contraseña incorrectos.', 401);
             }
 
+            // Si PHP cambió el algoritmo recomendado desde que se guardó la contraseña,
+            // se actualiza el hash aprovechando que en este momento la tenemos en claro.
             if (password_needs_rehash($user['password_hash'], PASSWORD_DEFAULT)) {
                 Query::UpdateUserPassword((int) $user['id'], password_hash($password, PASSWORD_DEFAULT));
             }
@@ -76,6 +97,7 @@ trait POST {
         });
     }
 
+    /** POST /api/logout — cierra la sesión del padre. Siempre responde { "ok": true }. */
     public function logout()
     {
         Bootstrap::getBootstrapApp()->post('/api/logout', function (Request $request, Response $response, $args) {

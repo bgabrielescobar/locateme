@@ -2,19 +2,46 @@
 
 /* =========================================================================
    LocateMe - panel de los padres
+
+   JavaScript "puro": sin frameworks ni compilación, el navegador ejecuta este
+   archivo tal cual. Está organizado en secciones:
+
+   1. Constantes y `state`: TODO lo que muestra la página sale del objeto
+      `state` (hijos, zonas, hijo seleccionado, recorrido...).
+   2. Utilidades: h() para crear elementos HTML, íconos y formato de fechas.
+   3. api(): la única función que habla con el servidor (fetch a /api/...).
+   4. Estado de cada hijo: statusOf() decide si está en zona, fuera, en SOS...
+   5. Renderizado: las funciones render*() redibujan una parte de la página a
+      partir de `state`. Regla: primero cambias `state` y luego llamas a render.
+   6. Mapa (Leaflet): capas de zonas, recorrido, precisión y marcadores.
+   7. Sincronización: refresh() pide datos nuevos cada POLL_MS (15 s).
+   8. Acciones: agregar/quitar hijos, vincular teléfonos, crear zonas.
+   9. Sesión e inicio: bindEvents() conecta los botones y arranca todo.
+
+   Qué pasa al abrir la página:
+     api('GET', 'me') ─ con sesión → showApp() → initMap() → refresh() → schedulePoll()
+                      └ sin sesión (401) → showAuth()
    ========================================================================= */
 
+// Cada cuánto se piden datos nuevos al servidor
 const POLL_MS = 15000;
+// Si no llega una ubicación en este tiempo, el niño aparece «Sin señal»
 const STALE_MINUTES = 15;
+// Horas de recorrido que muestra el botón «Recorrido»
 const HISTORY_HOURS = 24;
+// Centro del mapa cuando todavía no hay niños ni zonas (Mexicali)
 const DEFAULT_CENTER = [32.6040386, -115.4804487];
+// Color de las zonas seguras y nombres sugeridos al crear una
 const ZONE_COLOR = '#16a34a';
 const ZONE_PRESETS = ['Casa', 'Escuela', 'Casa de los abuelos', 'Parque', 'Deportes'];
+// Colores que se pueden elegir para cada hijo: [valor, nombre para lectores de pantalla]
 const CHILD_COLORS = [
   ['#6366f1', 'Índigo'], ['#ec4899', 'Rosa'], ['#f59e0b', 'Ámbar'], ['#10b981', 'Verde'],
   ['#0ea5e9', 'Azul cielo'], ['#8b5cf6', 'Violeta'], ['#14b8a6', 'Turquesa'], ['#f97316', 'Naranja'],
 ];
 
+// Íconos SVG (trazos de 24x24, estilo Lucide). En JS se usan con icon('nombre') y
+// en el HTML basta con <span data-icon="nombre"></span> (se rellena al cargar).
 const ICONS = {
   pin: '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
   map: '<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14M15 6v14"/>',
@@ -39,6 +66,22 @@ const ICONS = {
   check: '<path d="M20 6 9 17l-5-5"/>',
 };
 
+/**
+ * Estado de la página. Las funciones render*() sólo leen de aquí.
+ *
+ *   user        padre con sesión ({ id, name, username }) o null
+ *   children    hijos tal como llegan de GET /api/children
+ *   zones       zonas seguras de GET /api/zones
+ *   selectedId  id del hijo seleccionado en la lista o el mapa
+ *   historyId   id del hijo cuyo recorrido se está mostrando
+ *   history     puntos de ese recorrido
+ *   lastSync    momento (en ms) de la última actualización correcta
+ *   syncError   true si la última actualización falló (sin conexión)
+ *   prevStatus  estado anterior de cada hijo, para detectar llegadas y salidas
+ *   fitted      si ya se ajustó el mapa en la primera carga
+ *   placing     true mientras se espera un toque en el mapa para crear una zona
+ *   pollTimer   temporizador de la próxima actualización
+ */
 const state = {
   user: null,
   children: [],
@@ -54,6 +97,12 @@ const state = {
   pollTimer: null,
 };
 
+// Objetos de Leaflet (la librería del mapa). `map` se queda en null si Leaflet
+// no cargó, por eso las funciones del mapa empiezan con `if (!map) return;`.
+//   layers     grupos de capas: zones, history, accuracy y kids
+//   draftZone  círculo de la zona segura que se está creando
+//   linkChild  hijo del diálogo «Vincular teléfono»
+//   markers    id del hijo → { marker, accuracy, html }, para reutilizar los marcadores
 let map = null;
 let layers = null;
 let draftZone = null;
@@ -62,9 +111,22 @@ const markers = new Map();
 
 /* ---------- Utilidades ---------- */
 
+// Atajos: $('#id') devuelve un elemento y $$('.clase') todos los que coincidan
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => document.querySelectorAll(selector);
 
+/**
+ * Crea un elemento HTML. Es una versión mínima de lo que hacen React o Vue:
+ *
+ *   h('button', { class: 'btn', onclick: guardar }, icon('plus'), 'Agregar')
+ *   → <button class="btn">[ícono] Agregar</button>, con el click ya conectado
+ *
+ * - Las propiedades "on..." se convierten en addEventListener.
+ * - null, undefined y false se ignoran (útil para `condicion && h(...)`).
+ * - El texto se agrega como texto, NUNCA como HTML: un nombre como "<b>x</b>"
+ *   se ve literal y no puede inyectar código (XSS). Por eso en este archivo no
+ *   se usa innerHTML con datos que escribió un usuario.
+ */
 function h(tag, props = {}, ...children) {
   const el = document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {
@@ -81,6 +143,7 @@ function h(tag, props = {}, ...children) {
   return el;
 }
 
+/** Crea un <svg> a partir de su contenido. Sólo para los íconos fijos del código, nunca con datos del usuario. */
 function svg(inner) {
   const wrap = document.createElement('span');
   wrap.innerHTML = `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${inner}</svg>`;
@@ -89,21 +152,28 @@ function svg(inner) {
 
 const icon = (name) => svg(ICONS[name]);
 
+/** Ícono de batería con la barra llena según el porcentaje (0-100). */
 function batteryIcon(level) {
   const width = Math.max(1, Math.round(12 * level / 100));
   return svg(`${ICONS.battery}<rect x="4" y="9" width="${width}" height="6" rx="1" fill="currentColor" stroke="none"/>`);
 }
 
+// Leaflet recibe el contenido de tooltips y marcadores como HTML: todo texto del
+// usuario que vaya a Leaflet debe pasar antes por escapeHtml().
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
 ));
 
+// initial('sofía') → 'S' · isMobile() usa el mismo corte que el @media de style.css
+// listNames([...]) → "Ana, Luis y Sofía"
 const initial = (name) => ([...name.trim()][0] || '?').toUpperCase();
 const isMobile = () => matchMedia('(max-width: 900px)').matches;
 const listNames = (children) => new Intl.ListFormat('es', { type: 'conjunction' }).format(children.map((c) => c.name));
 
+// Formateador de tiempos relativos en español del navegador
 const relative = new Intl.RelativeTimeFormat('es', { numeric: 'auto' });
 
+/** Fecha ISO → "justo ahora", "hace 5 minutos", "ayer"... */
 function timeAgo(iso) {
   const seconds = Math.round((Date.parse(iso) - Date.now()) / 1000);
   const abs = Math.abs(seconds);
@@ -113,9 +183,15 @@ function timeAgo(iso) {
   return relative.format(Math.round(seconds / 86400), 'day');
 }
 
+// clockTime(iso) → "18:05" · formatDistance(1500) → "1.5 km"
 const clockTime = (iso) => new Date(iso).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
 const formatDistance = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
 
+/**
+ * Distancia en metros entre dos puntos { latitude, longitude } con la fórmula
+ * de haversine (trata a la Tierra como una esfera). Sirve para saber si un
+ * niño está dentro del radio de una zona segura.
+ */
 function distanceMeters(a, b) {
   const rad = (deg) => deg * Math.PI / 180;
   const dLat = rad(b.latitude - a.latitude);
@@ -124,6 +200,7 @@ function distanceMeters(a, b) {
   return 2 * 6371000 * Math.asin(Math.sqrt(x));
 }
 
+/** Aviso pequeño que aparece unos segundos sobre el mapa. */
 function toast(message, isError = false) {
   const el = h('div', { class: 'toast' + (isError ? ' is-error' : ''), role: isError ? 'alert' : 'status' }, message);
   $('#toasts').append(el);
@@ -132,6 +209,7 @@ function toast(message, isError = false) {
 
 /* ---------- API ---------- */
 
+/** Error de la API con su código HTTP (status 0 = sin conexión). El mensaje ya viene listo para mostrarse. */
 class ApiError extends Error {
   constructor(message, status) {
     super(message);
@@ -139,6 +217,17 @@ class ApiError extends Error {
   }
 }
 
+/**
+ * Llama a la API del servidor y devuelve el JSON de la respuesta.
+ *
+ *   const { children } = await api('GET', 'children');
+ *   await api('POST', 'zones', { name: 'Casa', latitude, longitude, radius });
+ *
+ * - La ruta es relativa: 'children' → /api/children.
+ * - La cookie de sesión viaja sola (credentials: 'same-origin').
+ * - Si la respuesta no es 2xx lanza un ApiError con el mensaje del servidor.
+ * - Si la sesión expiró (401) vuelve a la pantalla de inicio de sesión.
+ */
 async function api(method, path, body) {
   let response;
   try {
@@ -169,6 +258,7 @@ async function api(method, path, body) {
 
 /* ---------- Estado de cada hijo ---------- */
 
+/** Zona segura que contiene la ubicación (si se enciman, la de centro más cercano), o null. */
 function zoneAt(location) {
   let best = null;
   for (const zone of state.zones) {
@@ -178,6 +268,20 @@ function zoneAt(location) {
   return best ? best.zone : null;
 }
 
+/**
+ * Estado de un hijo, revisado en este orden de prioridad:
+ *
+ *   key        tone     cuándo
+ *   'sos'      danger   tiene una alerta SOS sin atender
+ *   'none'     idle     su teléfono nunca ha enviado una ubicación
+ *   'stale'    idle     la última ubicación tiene más de STALE_MINUTES
+ *   'zone:ID'  ok       está dentro de la zona segura con ese id
+ *   'away'     warn     hay zonas creadas y no está en ninguna
+ *   'active'   brand    no hay zonas creadas; sólo está compartiendo
+ *
+ * `tone` elige el color (clases .tone-* de style.css) y `label` el texto. Se
+ * calcula en el navegador cada vez; el servidor no guarda este estado.
+ */
 function statusOf(child) {
   const loc = child.last_location;
   if (child.sos_at) return { key: 'sos', tone: 'danger', label: '¡Pidió ayuda!' };
@@ -193,7 +297,11 @@ function statusOf(child) {
   return { key: 'active', tone: 'brand', label: 'Compartiendo ubicación' };
 }
 
-// Compara con el estado anterior para avisar llegadas, salidas y alertas SOS
+/**
+ * Compara el estado de cada hijo con el de la actualización anterior y avisa si
+ * pidió ayuda, llegó a una zona o salió de ella. En la primera carga
+ * (prevStatus = null) sólo guarda los estados, para no avisar de todo al abrir.
+ */
 function detectChanges() {
   const next = new Map(state.children.map((child) => [child.id, statusOf(child)]));
 
@@ -221,6 +329,11 @@ function resetBaseline() {
   state.prevStatus = new Map(state.children.map((child) => [child.id, statusOf(child)]));
 }
 
+/**
+ * Avisa al padre: siempre con un toast y, si dio permiso, con una notificación
+ * del sistema (cuando la pestaña no está a la vista o si es urgente). Urgente
+ * es un SOS: la notificación se queda hasta que la cierre y el teléfono vibra.
+ */
 function notify(title, body = '', urgent = false) {
   toast(title, urgent);
   if (urgent && navigator.vibrate) navigator.vibrate([300, 150, 300]);
@@ -234,6 +347,7 @@ function notify(title, body = '', urgent = false) {
 
 /* ---------- Renderizado ---------- */
 
+/** Redibuja toda la página a partir de `state`. */
 function render() {
   renderSummary();
   renderAlerts();
@@ -247,6 +361,10 @@ function render() {
   document.title = sosCount ? `(${sosCount}) ¡Alerta SOS! · LocateMe` : 'LocateMe · Mi familia';
 }
 
+/**
+ * Recuadro de resumen arriba de la lista ("Todos están en zonas seguras",
+ * "Luis está fuera de las zonas seguras"...). Muestra el caso más grave.
+ */
 function renderSummary() {
   const el = $('#summary');
   if (!state.children.length) {
@@ -278,6 +396,7 @@ function renderSummary() {
   el.hidden = false;
 }
 
+/** Banners rojos sobre el mapa, uno por cada alerta SOS sin atender. */
 function renderAlerts() {
   const sos = state.children.filter((c) => c.sos_at);
   $('#alerts').replaceChildren(...sos.map((child) => h('div', { class: 'banner banner-sos', role: 'alert' },
@@ -291,6 +410,7 @@ function renderAlerts() {
   )));
 }
 
+/** Lista de hijos, o la guía de primeros pasos si todavía no hay ninguno. */
 function renderChildren() {
   const list = $('#children-list');
 
@@ -310,6 +430,7 @@ function renderChildren() {
   list.replaceChildren(...state.children.map(childCard));
 }
 
+/** Tarjeta de un hijo: avatar, estado, hora, batería, precisión del GPS y botones. */
 function childCard(child) {
   const status = statusOf(child);
   const loc = child.last_location;
@@ -350,6 +471,7 @@ function childCard(child) {
   );
 }
 
+/** Lista de zonas seguras del panel y sus círculos en el mapa. */
 function renderZones() {
   const list = $('#zones-list');
 
@@ -388,6 +510,7 @@ function renderZones() {
   }
 }
 
+/** HTML del pin de un niño en el mapa (los estilos están en .kid-marker de style.css). */
 function markerHtml(child, status) {
   const classes = ['kid-marker'];
   if (status.key === 'sos') classes.push('is-sos');
@@ -399,9 +522,18 @@ function markerHtml(child, status) {
     + `<div class="kid-pin"><span>${escapeHtml(initial(child.name))}</span></div></div>`;
 }
 
-// La punta del pin queda 56px debajo de la esquina superior (el pin está rotado 45°)
+// Ícono del pin para Leaflet. El pin es un cuadrado girado 45° (ver .kid-pin en
+// style.css) y su punta queda 56 px debajo del borde superior; por eso
+// iconAnchor es [23, 56]: centro horizontal y la punta sobre la coordenada real.
 const kidIcon = (html) => L.divIcon({ className: 'kid-icon', html, iconSize: [46, 46], iconAnchor: [23, 56], tooltipAnchor: [0, -64] });
 
+/**
+ * Crea o actualiza el pin y el círculo de precisión de cada niño.
+ *
+ * Los marcadores se reutilizan (Map `markers`) en vez de borrarlos y crearlos en
+ * cada actualización: así no parpadean y un tooltip abierto no se cierra solo.
+ * Al final se quitan los de los niños que ya no existen.
+ */
 function renderMarkers() {
   if (!map) return;
   const seen = new Set();
@@ -445,6 +577,10 @@ function renderMarkers() {
   }
 }
 
+/**
+ * Dibuja el recorrido del hijo `state.historyId`: una línea punteada y un punto
+ * por ubicación (rojo si fue un SOS). Al pasar el mouse se ve la hora.
+ */
 function renderHistory() {
   if (!map) return;
   layers.history.clearLayers();
@@ -467,6 +603,7 @@ function renderHistory() {
   });
 }
 
+/** Texto «Actualizado hace...» del pie del panel. */
 function renderSync() {
   const el = $('#sync-status');
   el.classList.toggle('is-error', state.syncError);
@@ -477,6 +614,13 @@ function renderSync() {
 
 /* ---------- Mapa ---------- */
 
+/**
+ * Crea el mapa de Leaflet (una sola vez). Las imágenes del mapa vienen de
+ * OpenStreetMap; para usar otro proveedor cambia la URL de L.tileLayer y agrega
+ * su dominio a img-src en la CSP (src/Router/Models/Pages/Methods/GET.php).
+ *
+ * Capas, de abajo hacia arriba: zonas → recorrido → precisión → niños.
+ */
 function initMap() {
   if (map) return;
   if (typeof L === 'undefined') {
@@ -504,6 +648,7 @@ function initMap() {
   });
 }
 
+/** Ajusta el zoom para ver a todos los niños y zonas (botón de la mira). */
 function fitAll(animate = true) {
   if (!map) return;
   const bounds = L.latLngBounds([]);
@@ -518,12 +663,14 @@ function fitAll(animate = true) {
   else map.setView(DEFAULT_CENTER, 13, { animate });
 }
 
+/** Centra el mapa en una zona cuando se toca en la lista. */
 function focusZone(zone) {
   if (!map) return;
   if (isMobile()) window.scrollTo({ top: 0, behavior: 'smooth' });
   map.flyToBounds(L.latLng(zone.latitude, zone.longitude).toBounds(zone.radius * 2.6), { duration: 0.6 });
 }
 
+/** Resalta a un hijo en la lista y en el mapa; con fly=true además mueve el mapa hasta él. */
 function selectChild(id, fly) {
   state.selectedId = id;
   renderChildren();
@@ -541,6 +688,7 @@ function selectChild(id, fly) {
   if (entry) entry.marker.openTooltip();
 }
 
+/** Muestra u oculta el recorrido de un hijo (sólo uno a la vez). */
 async function toggleHistory(child) {
   if (state.historyId === child.id) {
     state.historyId = null;
@@ -558,6 +706,11 @@ async function toggleHistory(child) {
   await loadHistory(true);
 }
 
+/**
+ * Pide el recorrido de `state.historyId` y lo dibuja. Con fit=true (al abrirlo)
+ * ajusta el mapa para verlo completo. Si mientras llegaba la respuesta el
+ * usuario eligió a otro hijo, la respuesta se descarta.
+ */
 async function loadHistory(fit) {
   const id = state.historyId;
   if (id == null) return;
@@ -580,6 +733,11 @@ async function loadHistory(fit) {
 
 /* ---------- Sincronización ---------- */
 
+/**
+ * Pide hijos y zonas al servidor, detecta cambios (para los avisos) y redibuja
+ * todo. Se llama al entrar, cada POLL_MS, al volver a la pestaña y con el
+ * botón de actualizar.
+ */
 async function refresh() {
   try {
     const [{ children }, { zones }] = await Promise.all([api('GET', 'children'), api('GET', 'zones')]);
@@ -609,6 +767,10 @@ async function refresh() {
   }
 }
 
+/**
+ * Programa la siguiente actualización. Usa setTimeout y no setInterval para que
+ * nunca corran dos refresh() a la vez si el servidor tarda en responder.
+ */
 function schedulePoll() {
   clearTimeout(state.pollTimer);
   state.pollTimer = setTimeout(async () => {
@@ -619,6 +781,7 @@ function schedulePoll() {
 
 /* ---------- Acciones ---------- */
 
+/** «Marcar atendida»: quita la alerta SOS de un hijo. */
 async function acknowledgeSos(child) {
   try {
     await api('POST', `children/${child.id}/sos/ack`);
@@ -629,6 +792,7 @@ async function acknowledgeSos(child) {
   }
 }
 
+/** Quita a un hijo (y su historial) después de confirmar. */
 async function removeChild(child) {
   const ok = await confirmDialog({
     title: `¿Quitar a ${child.name}?`,
@@ -646,6 +810,7 @@ async function removeChild(child) {
   }
 }
 
+/** Borra una zona después de confirmar. */
 async function removeZone(zone) {
   const ok = await confirmDialog({
     title: `¿Borrar la zona «${zone.name}»?`,
@@ -665,6 +830,11 @@ async function removeZone(zone) {
   }
 }
 
+/**
+ * Diálogo de confirmación propio (en lugar de window.confirm). Devuelve una
+ * promesa: `if (await confirmDialog({...}))`. Es true sólo si se tocó el botón
+ * de confirmar; Escape o Cancelar dan false.
+ */
 function confirmDialog({ title, text, confirm }) {
   const dialog = $('#confirm-dialog');
   $('#confirm-title').textContent = title;
@@ -680,6 +850,7 @@ function confirmDialog({ title, text, confirm }) {
 
 /* ---------- Agregar hijo y vincular su teléfono ---------- */
 
+/** Abre «Agregar a un hijo» con un color preseleccionado que ningún hermano use. */
 function openChildDialog() {
   const form = $('#child-form');
   form.reset();
@@ -696,6 +867,7 @@ function openChildDialog() {
   $('#child-name').focus();
 }
 
+/** Crea al hijo y muestra enseguida el enlace y el QR para su teléfono. */
 async function submitChild(event) {
   event.preventDefault();
   const form = event.currentTarget;
@@ -721,6 +893,10 @@ async function submitChild(event) {
   }
 }
 
+/**
+ * Abre «Vincular teléfono» para un hijo que ya existe. Primero advierte que el
+ * enlace anterior dejará de funcionar; el enlace nuevo se pide en generateLink().
+ */
 function openLinkDialog(child) {
   linkChild = child;
   $('#link-dialog-title').textContent = `Vincular el teléfono de ${child.name}`;
@@ -729,6 +905,7 @@ function openLinkDialog(child) {
   $('#link-dialog').showModal();
 }
 
+/** Pide un token nuevo al servidor y muestra el enlace. */
 async function generateLink() {
   const button = $('#link-generate');
   button.disabled = true;
@@ -742,6 +919,10 @@ async function generateLink() {
   }
 }
 
+/**
+ * Muestra el enlace /nino#t=<token> y su código QR. Al cerrar el diálogo el
+ * enlace se borra de la página (ver el evento 'close' en bindEvents).
+ */
 function showLink(child, token) {
   linkChild = child;
   // El token va después de "#" para que nunca llegue a los logs del servidor
@@ -769,6 +950,7 @@ function showLink(child, token) {
   if (!dialog.open) dialog.showModal();
 }
 
+/** Copia el enlace; si el navegador no permite el portapapeles moderno, usa el método antiguo. */
 async function copyLink() {
   const input = $('#link-url');
   try {
@@ -780,6 +962,7 @@ async function copyLink() {
   toast('Enlace copiado');
 }
 
+/** Abre el menú de compartir del teléfono (WhatsApp, mensajes...). Sólo existe si hay navigator.share. */
 async function shareLink() {
   try {
     await navigator.share({
@@ -792,6 +975,13 @@ async function shareLink() {
 
 /* ---------- Zonas seguras ---------- */
 
+/*
+ * Crear una zona segura tiene 3 pasos:
+ *   1. startPlacing(): cambia el cursor y pide tocar el mapa.
+ *   2. placeDraftZone(): al tocar aparece un círculo de borrador y el editor
+ *      (nombre y tamaño). Tocar otra vez el mapa mueve el círculo.
+ *   3. submitZone(): la guarda en el servidor. cancelZoneEditor() limpia todo.
+ */
 function startPlacing() {
   if (!map) return;
   cancelZoneEditor();
@@ -864,6 +1054,7 @@ async function submitZone(event) {
 
 /* ---------- Sesión ---------- */
 
+/** Muestra la pantalla de acceso (con un mensaje de error opcional) y detiene las actualizaciones. */
 function showAuth(message) {
   clearTimeout(state.pollTimer);
   state.user = null;
@@ -876,6 +1067,7 @@ function showAuth(message) {
   errorBox.hidden = !message;
 }
 
+/** Muestra el panel del padre, crea el mapa y empieza a actualizar cada POLL_MS. */
 async function showApp(user) {
   state.user = user;
   state.fitted = false;
@@ -891,6 +1083,7 @@ async function showApp(user) {
   schedulePoll();
 }
 
+/** Cambia entre las pestañas «Iniciar sesión» y «Crear cuenta». */
 function switchAuthTab(tab) {
   const isLogin = tab === 'login';
   $('#tab-login').setAttribute('aria-selected', String(isLogin));
@@ -901,6 +1094,10 @@ function switchAuthTab(tab) {
   (isLogin ? $('#login-username') : $('#register-name')).focus();
 }
 
+/**
+ * Envía el formulario de login o de registro (path = 'login' | 'register').
+ * Los atributos name de los <input> son justo los campos que espera la API.
+ */
 async function submitAuth(event, path) {
   event.preventDefault();
   const form = event.currentTarget;
@@ -919,6 +1116,10 @@ async function submitAuth(event, path) {
   }
 }
 
+/**
+ * Cierra la sesión y limpia el estado y el mapa, para que otra persona que use
+ * la misma computadora no vea los datos anteriores.
+ */
 async function logout() {
   try { await api('POST', 'logout'); } catch { /* igual cerramos la sesión local */ }
 
@@ -938,7 +1139,9 @@ async function logout() {
 
 /* ---------- Inicio ---------- */
 
+/** Conecta cada botón y formulario del HTML con su función. Se ejecuta una sola vez. */
 function bindEvents() {
+  // Cada <span data-icon="..."> del HTML recibe su ícono SVG
   $$('[data-icon]').forEach((el) => el.append(icon(el.dataset.icon)));
 
   $('#tab-login').addEventListener('click', () => switchAuthTab('login'));
@@ -1006,6 +1209,8 @@ function bindEvents() {
     if (event.key === 'Escape' && (state.placing || draftZone)) cancelZoneEditor();
   });
 
+  // Al volver a la pestaña se actualiza enseguida: los navegadores frenan los
+  // temporizadores de las pestañas que no están a la vista.
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && state.user) {
       refresh();
@@ -1013,9 +1218,11 @@ function bindEvents() {
     }
   });
 
+  // Mantiene al día el texto «Actualizado hace...» aunque no lleguen datos nuevos
   setInterval(() => { if (state.user) renderSync(); }, 5000);
 }
 
+// Arranque: con una cookie de sesión válida se muestra el panel; si no, el acceso.
 bindEvents();
 
 api('GET', 'me')

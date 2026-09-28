@@ -12,7 +12,16 @@ use Src\Helpers\Database\Query;
 
 trait POST {
 
-    // Crea al niño y devuelve el token para vincular su teléfono (sólo se muestra esta vez)
+    /**
+     * POST /api/children — agrega un hijo.
+     *
+     * Cuerpo JSON: { "name": "Sofía", "color": "#ec4899" }   (el color es opcional)
+     * Respuesta 201: { "child": { id, name, color }, "device_token": "..." }
+     *
+     * device_token es la "contraseña" del teléfono del niño. En la base de datos
+     * sólo se guarda su hash, así que ésta es la única vez que se puede ver: el
+     * panel lo convierte en el enlace /nino#t=<token> y en el código QR.
+     */
     public function addChild()
     {
         Bootstrap::getBootstrapApp()->post('/api/children', function (Request $request, Response $response, $args) {
@@ -35,7 +44,12 @@ trait POST {
         })->add(Auth::requireUser());
     }
 
-    // Genera un enlace nuevo; el teléfono vinculado antes deja de funcionar
+    /**
+     * POST /api/children/{id}/token — genera un enlace nuevo para el teléfono.
+     *
+     * Reemplaza el hash guardado, así que el enlace anterior deja de funcionar al
+     * instante (útil si se perdió el teléfono). Respuesta: { "device_token": "..." }
+     */
     public function newDeviceLink()
     {
         Bootstrap::getBootstrapApp()->post('/api/children/{id:[0-9]+}/token', function (Request $request, Response $response, $args) {
@@ -50,7 +64,12 @@ trait POST {
         })->add(Auth::requireUser());
     }
 
-    // El padre confirma que ya atendió la alerta SOS
+    /**
+     * POST /api/children/{id}/sos/ack — el padre marca la alerta SOS como atendida.
+     *
+     * Pone children.sos_at en NULL. La alerta NO se quita sola cuando llegan
+     * ubicaciones normales: sólo el padre puede darla por atendida.
+     */
     public function acknowledgeSos()
     {
         Bootstrap::getBootstrapApp()->post('/api/children/{id:[0-9]+}/sos/ack', function (Request $request, Response $response, $args) {
